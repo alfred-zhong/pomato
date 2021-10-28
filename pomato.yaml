@@ -1,0 +1,6 @@
+pomodoro_time: 1 # minutues
+break_time: 1
+long_break_time: 1
+long_break_each: 4 # pomodoros
+autostart_next: false
+show_notification: true
