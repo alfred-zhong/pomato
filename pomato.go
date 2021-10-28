@@ -77,7 +77,7 @@ func (p *Pomato) pomodoroMode() error {
 
 				// check if need to wait until user press to continue
 				if !p.autoStartNext {
-					if _, err := waitForPress("Press any key to continue"); err != nil {
+					if _, err := waitForPress("Press enter to continue"); err != nil {
 						return err
 					}
 				}
@@ -85,7 +85,7 @@ func (p *Pomato) pomodoroMode() error {
 		}
 
 		// user must press to start a new big pomodoro
-		if _, err := waitForPress("Press any key to start a new round"); err != nil {
+		if _, err := waitForPress("Press enter to start a new round"); err != nil {
 			return err
 		}
 	}
