@@ -1,6 +1,6 @@
-pomodoro_time: 1 # minutues
-break_time: 1
-long_break_time: 1
-long_break_each: 4 # pomodoros
-autostart_next: false
-show_notification: true
+pomodoro-time: 1 # minutues
+break-time: 1
+long-break-time: 1
+long-break-each: 4 # pomodoros
+autostart-next: false
+show-notification: true

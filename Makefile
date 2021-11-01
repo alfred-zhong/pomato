@@ -13,4 +13,4 @@ build: mkdir-bin
 all: clean build
 
 dev-server-run: build
-	cd ./bin && ./pomato
+	cd ./bin && ./pomato --pomodoro-time 5 --break-time 3 --long-break-time 4 --time-unit s

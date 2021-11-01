@@ -1,11 +1,13 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"time"
 
 	"github.com/alfred-zhong/pomato"
+	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 )
 
@@ -46,27 +48,45 @@ func registerViper() {
 	for _, path := range configPath {
 		viper.AddConfigPath(path)
 	}
+
+	// bind with flag
+	flag.Int(keyPomodoroTime, pomato.DefaultPomodoroTime, "pomodoro time. (Unit: minute)")
+	flag.Int(keyBreakTime, pomato.DefaultBreakTime, "break time. (Unit: minute)")
+	flag.Int(keyLongBreakTime, pomato.DefaultLongBreakTime, "long break time. (Unit: minute)")
+	flag.Int(keyLongBreakEach, pomato.DefaultLongBreakEach, "long break each rounds.")
+	flag.String(keyTimeUnit, "m", "time unit. (\"m\" or \"s\")")
+	flag.Bool(keyAutostartNext, pomato.DefaultAutoStartNext, "auto start next pomodoro.")
+	flag.Bool(keyShowNotification, pomato.DefaultShowNotification, "show notification.")
+
+	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
+	pflag.Parse()
+	viper.BindPFlags(pflag.CommandLine)
 }
 
 const (
-	keyPomodoroTime     = "pomodoro_time"
-	keyBreakTime        = "break_time"
-	keyLongBreakTime    = "long_break_time"
-	keyLongBreakEach    = "long_break_each"
-	keyAutostartNext    = "autostart_next"
-	keyShowNotification = "show_notification"
+	keyPomodoroTime     = "pomodoro-time"
+	keyBreakTime        = "break-time"
+	keyLongBreakTime    = "long-break-time"
+	keyLongBreakEach    = "long-break-each"
+	keyTimeUnit         = "time-unit"
+	keyAutostartNext    = "autostart-next"
+	keyShowNotification = "show-notification"
 )
 
 func buildOptions() []pomato.Option {
 	opts := make([]pomato.Option, 0, 6)
+	timeUnit := time.Minute
+	if s := viper.GetString(keyTimeUnit); s == "s" {
+		timeUnit = time.Second
+	}
 	if i := viper.GetInt(keyPomodoroTime); i > 0 {
-		opts = append(opts, pomato.WithPomodoroTime(time.Duration(i)*time.Minute))
+		opts = append(opts, pomato.WithPomodoroTime(time.Duration(i)*timeUnit))
 	}
 	if i := viper.GetInt(keyBreakTime); i > 0 {
-		opts = append(opts, pomato.WithBreakTime(time.Duration(i)*time.Minute))
+		opts = append(opts, pomato.WithBreakTime(time.Duration(i)*timeUnit))
 	}
 	if i := viper.GetInt(keyLongBreakTime); i > 0 {
-		opts = append(opts, pomato.WithLongBreakTime(time.Duration(i)*time.Minute))
+		opts = append(opts, pomato.WithLongBreakTime(time.Duration(i)*timeUnit))
 	}
 	if r := viper.GetInt(keyLongBreakEach); r > 0 {
 		opts = append(opts, pomato.WithLongBreakEach(r))

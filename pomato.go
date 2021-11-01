@@ -5,28 +5,20 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
 	"github.com/fatih/color"
 )
 
-// const (
-// 	defaultPomodoroTime     = 6 * time.Second
-// 	defaultBreakTime        = 3 * time.Second
-// 	defaultLongBreakTime    = 5 * time.Second
-// 	defaultLongBreakEach    = 2
-// 	defaultAutoStartNext    = false
-// 	defaultShowNotification = true
-// )
-
 const (
-	defaultPomodoroTime     = 25 * time.Minute
-	defaultBreakTime        = 5 * time.Minute
-	defaultLongBreakTime    = 15 * time.Minute
-	defaultLongBreakEach    = 4
-	defaultAutoStartNext    = false
-	defaultShowNotification = true
+	DefaultPomodoroTime     = 25
+	DefaultBreakTime        = 5
+	DefaultLongBreakTime    = 15
+	DefaultLongBreakEach    = 4
+	DefaultAutoStartNext    = false
+	DefaultShowNotification = true
 )
 
 type Pomato struct {
@@ -43,12 +35,17 @@ func (p *Pomato) Run() error {
 }
 
 func (p *Pomato) pomodoroMode() error {
+	stopC := make(chan struct{})
+	defer close(stopC)
+
+	stdinC := listenStdin(stopC)
+
 	for {
 		for i := 0; i < p.longBreakEach; i++ {
 			// Pomodoro count down
 			countDown(
 				fmt.Sprintf("[%d] %s", i+1, color.YellowString("Pomodoro time")),
-				p.pomodoroTime,
+				p.pomodoroTime, stdinC,
 			)
 
 			// break count down
@@ -58,7 +55,7 @@ func (p *Pomato) pomodoroMode() error {
 				}
 				countDown(
 					fmt.Sprintf("[%d] %s", i+1, color.GreenString("Long break time")),
-					p.longBreakTime,
+					p.longBreakTime, stdinC,
 				)
 				if p.showNotification {
 					notifyStart("Pomato", "Long break finished! Continue to work.")
@@ -69,7 +66,7 @@ func (p *Pomato) pomodoroMode() error {
 				}
 				countDown(
 					fmt.Sprintf("[%d] %s", i+1, color.BlueString("Break time")),
-					p.breakTime,
+					p.breakTime, stdinC,
 				)
 				if p.showNotification {
 					notifyEnd("Pomato", "Break finished!")
@@ -77,25 +74,26 @@ func (p *Pomato) pomodoroMode() error {
 
 				// check if need to wait until user press to continue
 				if !p.autoStartNext {
-					if _, err := waitForPress("Press enter to continue"); err != nil {
-						return err
-					}
+					waitForReturn("Press enter to continue", stdinC)
 				}
 			}
 		}
 
 		// user must press to start a new big pomodoro
-		if _, err := waitForPress("Press enter to start a new round"); err != nil {
-			return err
-		}
+		waitForReturn("Press enter to continue", stdinC)
 	}
 }
 
-func countDown(msg string, d time.Duration) error {
+func countDown(msg string, d time.Duration, stdinC chan byte) error {
 	endTime := time.Now().Add(d)
 
-	timer := time.NewTimer(d)
-	defer timer.Stop()
+	stopC := make(chan struct{})
+	defer close(stopC)
+
+	spaceC := listenForSpace(stopC, stdinC)
+
+	// timer := time.NewTimer(d)
+	// defer timer.Stop()
 
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
@@ -107,15 +105,43 @@ func countDown(msg string, d time.Duration) error {
 	)
 	totalStr := fmt.Sprintf("%d:%02d", total/60, total%60)
 	fmt.Printf("\r\033[K%s: %d:%02d/%s", msg, left/60, left%60, totalStr)
+
+	var (
+		paused      bool
+		leftSeconds float64
+	)
 LOOP:
 	for {
 		select {
-		case <-timer.C:
-			fmt.Printf("\r\033[K%s: 0:00/%s", msg, totalStr)
-			break LOOP
+		// case <-timer.C:
+		// 	fmt.Printf("\r\033[K%s: 0:00/%s", msg, totalStr)
+		// 	break LOOP
 		case <-ticker.C:
-			left = int(math.Round(time.Until(endTime).Seconds()))
+			leftSeconds = time.Until(endTime).Seconds()
+			left = int(math.Round(leftSeconds))
 			fmt.Printf("\r\033[K%s: %d:%02d/%s", msg, left/60, left%60, totalStr)
+
+			if left <= 0 {
+				break LOOP
+			}
+		case <-spaceC:
+			if paused {
+				// timer.Reset(time.Duration(leftSeconds))
+				// timer = time.NewTimer(time.Duration(leftSeconds))
+				ticker.Reset(time.Second)
+
+				endTime = time.Now().Add(time.Duration(leftSeconds) * time.Second)
+				left = int(math.Round(leftSeconds))
+				fmt.Printf("\r\033[K%s: %d:%02d/%s", msg, left/60, left%60, totalStr)
+			} else {
+				// timer.Stop()
+				ticker.Stop()
+
+				leftSeconds = time.Until(endTime).Seconds()
+				left = int(math.Round(leftSeconds))
+				fmt.Printf("\r\033[K%s: %d:%02d/%s [Paused]", msg, left/60, left%60, totalStr)
+			}
+			paused = !paused
 		}
 	}
 	fmt.Println()
@@ -138,14 +164,78 @@ func waitForPress(msg string) (input string, err error) {
 	return strings.TrimSpace(string(b)), nil
 }
 
+func waitForReturn(msg string, stdinC chan byte) {
+	fmt.Printf("\r\033[K%s: ", msg)
+
+	for b := range stdinC {
+		if b == '\n' {
+			return
+		}
+	}
+}
+
+func listenForSpace(stopC chan struct{}, stdinC chan byte) chan struct{} {
+	c := make(chan struct{})
+
+	go func() {
+		defer close(c)
+
+	LOOP:
+		for {
+			select {
+			case <-stopC:
+				break LOOP
+			case b := <-stdinC:
+				if b == ' ' {
+					select {
+					case c <- struct{}{}:
+					default:
+					}
+				}
+			}
+		}
+	}()
+
+	return c
+}
+
+func listenStdin(stopC chan struct{}) chan byte {
+	c := make(chan byte)
+
+	go func() {
+		defer close(c)
+
+		exec.Command("stty", "-F", "/dev/tty", "cbreak", "min", "1").Run()
+		exec.Command("stty", "-F", "/dev/tty", "-echo").Run()
+
+		buf := make([]byte, 1)
+	LOOP:
+		for {
+			if _, err := os.Stdin.Read(buf); err != nil {
+				fmt.Printf("read from stdin fail: %v\n", err)
+				return
+			}
+
+			select {
+			case <-stopC:
+				break LOOP
+			case c <- buf[0]:
+			default:
+			}
+		}
+	}()
+
+	return c
+}
+
 func NewPomato(options ...Option) *Pomato {
 	p := &Pomato{
-		pomodoroTime:     defaultPomodoroTime,
-		breakTime:        defaultBreakTime,
-		longBreakTime:    defaultLongBreakTime,
-		longBreakEach:    defaultLongBreakEach,
-		autoStartNext:    defaultAutoStartNext,
-		showNotification: defaultShowNotification,
+		pomodoroTime:     DefaultPomodoroTime * time.Minute,
+		breakTime:        DefaultBreakTime * time.Minute,
+		longBreakTime:    DefaultLongBreakTime * time.Minute,
+		longBreakEach:    DefaultLongBreakEach,
+		autoStartNext:    DefaultAutoStartNext,
+		showNotification: DefaultShowNotification,
 	}
 
 	for _, opts := range options {
