@@ -205,6 +205,7 @@ func listenStdin(stopC chan struct{}) chan byte {
 	go func() {
 		defer close(c)
 
+		// FIXME: just can't catch a single press without enter.
 		exec.Command("stty", "-F", "/dev/tty", "cbreak", "min", "1").Run()
 		exec.Command("stty", "-F", "/dev/tty", "-echo").Run()
 
